@@ -15,6 +15,7 @@
 # @created: 06.10.2019
 """
 import numpy as np
+import numpy.random
 from numpy.random import RandomState
 from abc import abstractmethod
 from sklearn.utils.validation import check_is_fitted, check_random_state, check_X_y
@@ -29,6 +30,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import ExtraTreesClassifier
 from joblib import parallel, delayed, Parallel
+from numpy.random import Generator, PCG64
 
 
 def _parallel_fit(model_cls: Type[BaseEstimator],
@@ -77,6 +79,9 @@ class CustomDSBase(BaseEstimator, ClassifierMixin):
         self.DSEL_perc = DSEL_perc
         self.pool_classifiers_: Optional[List[BaseEstimator]] = pool_classifiers
         self.random_state_: Optional[RandomState] = None
+        self.random_generator_: Optional[Generator] = None
+        self.positions_trace_: Optional[List[int]] = None
+
         self.n_classifiers_: Optional[int] = None
         self.max_jobs = max_jobs
 
@@ -193,10 +198,10 @@ class CustomDSBase(BaseEstimator, ClassifierMixin):
         :raises ValueError: if classifiers are not supported
         :return:
         """
-        self.reset()
-        self.random_state_ = check_random_state(self.random_state)
-        np.random.seed(self.random_state)
 
+        self.reset()
+        self.random_generator_ = np.random.default_rng(seed=self.random_state)
+        self.random_state_ = np.random.RandomState(seed=self.random_state)
         # Check if the length of X and y are consistent.
         X, y = check_X_y(X, y)
 
@@ -561,7 +566,7 @@ class GON(CustomDCSBase):
 
         X = np.atleast_2d(query)
         competences = np.zeros(shape=(len(query), len(self.get_current_classifiers())),
-                               dtype=np.bool)
+                               dtype=bool)
 
         assignments = self.assign_data_points_to_model(X, is_processed=False)
 
@@ -602,12 +607,12 @@ class GON(CustomDCSBase):
             # so we pretend equal distribution
             if last_importances is None:
                 # we do not have last importances so we will equally distribute importances....
-                last_importances = np.ndarray(shape=(self.get_data_dimensionality(), ), dtype=np.float)
+                last_importances = np.ndarray(shape=(self.get_data_dimensionality(), ), dtype=float)
                 last_importances[:] = 1. / self.get_data_dimensionality()
                 self.current_feature_importances_ = last_importances
 
                 # ... and NOT lasso anything out first iteration
-                self.important_feature_indexer_ = np.ones(shape=(self.get_data_dimensionality(),), dtype=np.bool)
+                self.important_feature_indexer_ = np.ones(shape=(self.get_data_dimensionality(),), dtype=bool)
             else:
                 # we have some importances from last round and will lasso something out
                 current_importances = self.feature_importances_
@@ -641,6 +646,7 @@ class GON(CustomDCSBase):
             self.auto_determine_maximum_selected_features()
 
         self.model_positions_ = self._init_model_positions()
+        self.positions_trace_ = [self.model_positions_.copy()]
         self._fit_classifiers_to_closest_points()
         best_performance = self._calculate_performance()
         best_pos = self.model_positions_.copy()
@@ -661,8 +667,9 @@ class GON(CustomDCSBase):
             self.log_info(f"Current step size: {step_size:.3f}")
 
             self.step(step_size=step_size)
-            current_performance = self._calculate_performance()
+            self.positions_trace_.append(self.model_positions_.copy())
 
+            current_performance = self._calculate_performance()
             self.log_info(f"Performance: {current_performance:.3f}")
 
             if current_performance > best_performance:
@@ -721,8 +728,10 @@ class GON(CustomDCSBase):
         if self._stochastic_attention < 1.:
             # we leave the "draw with replacement"-option turned on
             # to reduce calculation time here
-            data_indices = np.random.choice(np.arange(0, len(dsel_data), 1),
-                                            int(self._stochastic_attention * len(dsel_data)))
+            data_indices = self.random_generator_.choice(np.arange(0, len(dsel_data), 1),
+                                                     int(self._stochastic_attention * len(dsel_data))
+                                            )
+
             data_to_evaluate = dsel_data[data_indices]
             dsel_labels = dsel_labels[data_indices]
         else:
@@ -744,10 +753,10 @@ class GON(CustomDCSBase):
                 # pick random points in local mode if model is area and didn't receive any assignments
                 # this case cannot happen in global mode (since it will always predict ALL samples)
                 if len(assignment) == 0 and self._assign_random_points_if_model_outside: # only if requested by user
-                    assignment = np.random.randint(0,
-                                              len(dsel_data),
-                                              max(2,
-                                                  int(len(dsel_data) / len(models))))
+                    assignment = self.random_generator_.integers(0,
+                                                            len(dsel_data),
+                                                            max(2,
+                                                                int(len(dsel_data) / len(models))))
 
             else: # global mode (
                 assignment = assignments
@@ -759,7 +768,7 @@ class GON(CustomDCSBase):
                     data_to_evaluate = self.X_expert_dsel
 
                 pred = model.predict(data_to_evaluate[assignment])
-                correct_predict_idx = np.where(pred.astype(np.str) == dsel_labels[assignment].astype(np.str))[0]
+                correct_predict_idx = np.where(pred.astype(str) == dsel_labels[assignment].astype(str))[0]
                 correct_predict_dsel = dsel_data[assignment][correct_predict_idx]
 
                 if len(correct_predict_idx) > 0:
@@ -793,12 +802,12 @@ class GON(CustomDCSBase):
                 res_val = self.predict(X=self.get_val_data(processed=False), X_expert=self.get_expert_data_val())
 
         # mix training accuracy and test accuracy
-        acc_train = accuracy_score(y_true=self.get_train_targets(processed=False).astype(np.str),
-                                   y_pred=res_train.astype(np.str))
+        acc_train = accuracy_score(y_true=self.get_train_targets(processed=False).astype(str),
+                                   y_pred=res_train.astype(str))
 
         if res_val is not None:
-            acc_val = accuracy_score(y_true=self.get_val_targets(processed=False).astype(np.str),
-                                       y_pred=res_val.astype(np.str))
+            acc_val = accuracy_score(y_true=self.get_val_targets(processed=False).astype(str),
+                                       y_pred=res_val.astype(str))
         else:
             acc_val = acc_train
 
@@ -829,7 +838,7 @@ class GON(CustomDCSBase):
         preds = self.pool_classifiers_[expert_idx].predict(X=data_X)
         y_true = self.get_DSEL_target(processed=True)
 
-        return accuracy_score(y_true=y_true[model_assignment].astype(np.str), y_pred=preds.astype(np.str))
+        return accuracy_score(y_true=y_true[model_assignment].astype(str), y_pred=preds.astype(str))
 
     def calculate_expert_global_performance(self, expert_idx: int) -> float:
         """
@@ -847,8 +856,8 @@ class GON(CustomDCSBase):
         preds = self.pool_classifiers_[expert_idx].predict(X=data_X )
         y_true = self.get_DSEL_target(processed=True)
 
-        return accuracy_score(y_true=y_true.astype(np.str),
-                              y_pred=preds.astype(np.str))
+        return accuracy_score(y_true=y_true.astype(str),
+                              y_pred=preds.astype(str))
 
     def predict(self, X: Union[List, np.ndarray], X_expert: Optional[Union[List, np.ndarray]]=None) -> np.ndarray:
         """
@@ -905,7 +914,7 @@ class GON(CustomDCSBase):
         if self.important_feature_indexer_ is None:
             # init feature selection
             self.important_feature_indexer_ = np.ndarray(shape=(self.get_data_dimensionality(),),
-                                                         dtype=np.bool)
+                                                         dtype=bool)
             self.important_feature_indexer_[:] = True
 
         return self.important_feature_indexer_
@@ -941,13 +950,12 @@ class GON(CustomDCSBase):
             # if all data points are assigned somewhere else
             # we optionally pick some random points
             if len(assigned_data_indices) == 0 and self._assign_random_points_if_model_outside:
-                assigned_data_indices = np.random.randint(0,
-                                                          len(train_data_prepared),
-                                                          max(2,
-                                                              int(len(train_data_prepared) / len(model_to_points))))
+                assigned_data_indices = self.random_generator_.integers(0,
+                                                                   len(train_data_prepared),
+                                                                   max(2,
+                                                                       int(len(train_data_prepared) / len(model_to_points))))
 
             model_to_data_point_indices[model_idx] = assigned_data_indices
-
         # actually fit the model
         if only_expert_idx is not None:  # if we only fit one we skip the parallel part
             self.pool_classifiers_[only_expert_idx].fit(
@@ -1206,7 +1214,7 @@ class GON(CustomDCSBase):
         Will return initial points for the models in feature space
         :return:
         """
-        pos = np.zeros(shape=(len(self.pool_classifiers_), self.get_data_dimensionality()), dtype=np.float)
+        pos = np.zeros(shape=(len(self.pool_classifiers_), self.get_data_dimensionality()), dtype=float)
         for i in range(len(self.get_current_classifiers())):
             pos[i, :] = self.generate_model_pos_in_feature_space()
         return pos
@@ -1216,9 +1224,9 @@ class GON(CustomDCSBase):
         Will return a random position within feature spawn
         :return:
         """
-        return [np.random.normal(loc=0,
-                                  size=1,
-                                  scale=self.dsel_std_[dim])[0] for dim in range(self.get_data_dimensionality())]
+        return [self.random_generator_.normal(loc=0,
+                                              size=1,
+                                              scale=self.dsel_std_[dim])[0] for dim in range(self.get_data_dimensionality())]
 
     def add_model(self, model: BaseEstimator):
         """
@@ -1299,7 +1307,7 @@ class GON(CustomDCSBase):
                 self.log_warning(f"Model at index {i} raised error \"{e}\" when trying to fetch feature importances."
                                  f"Will fall back to equal distribution for that model (Code: 347238974)")
 
-                curr_imp = np.ndarray(shape=(self.get_data_dimensionality(), ), dtype=np.float)
+                curr_imp = np.ndarray(shape=(self.get_data_dimensionality(), ), dtype=float)
                 curr_imp[:] = 1. / self.get_data_dimensionality()
 
             if len(curr_imp) != self.get_data_dimensionality():
@@ -1314,7 +1322,7 @@ class GON(CustomDCSBase):
         importances_nerds /= sum(importances_nerds)
 
         # calculate assignment importances
-        labels = np.zeros(n_samples, dtype=np.int)
+        labels = np.zeros(n_samples, dtype=int)
         for model_idx, assignment in assignments.items():
             labels[assignment] = model_idx
 
@@ -1361,11 +1369,13 @@ class GON(CustomDCSBase):
 
         assert 0 < include_features_until_information <= 1, "included information must be in ]0, 1] (Code: 349823904)"
 
-        # just collect features until we explain more than 60% half of the importance
-        tree = ExtraTreesClassifier(n_estimators=1000, max_depth=3)
+        # just collect features until we explain more than 60% of the importance
+        tree = ExtraTreesClassifier(n_estimators=1000, max_depth=3,
+                                    random_state=self.random_state_,
+                                    bootstrap=0.6)
         tree.fit(self.get_train_data(processed=False), self.get_train_targets(processed=False))
-        importances = sorted(tree.feature_importances_, reverse=True)
 
+        importances = sorted(tree.feature_importances_, reverse=True)
         score: float = 0
         for i, imp in enumerate(importances):
             score += imp
