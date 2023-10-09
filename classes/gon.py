@@ -1372,7 +1372,8 @@ class GON(CustomDCSBase):
         # just collect features until we explain more than 60% of the importance
         tree = ExtraTreesClassifier(n_estimators=1000, max_depth=3,
                                     random_state=self.random_state_,
-                                    bootstrap=0.6)
+                                    bootstrap=True,
+                                    )
         tree.fit(self.get_train_data(processed=False), self.get_train_targets(processed=False))
 
         importances = sorted(tree.feature_importances_, reverse=True)
