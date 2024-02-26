@@ -27,6 +27,8 @@ The model is trained incrementally in steps, outlined as follows:
         - Each model moves a step (with a decaying `step size`) in the direction of the accumulated force
 - After training the best found position for each model during the training cycle is recovered
 
+![LoE Training](./loe_train.png)
+
 ### Prediction
 
 The model closest to the data point is found which will predict and will predict the data point. No other models will be
