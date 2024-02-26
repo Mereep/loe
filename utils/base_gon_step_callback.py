@@ -6,7 +6,7 @@ from matplotlib.animation import ArtistAnimation
 import numpy as np
 
 
-class BaseGonStepCallBack(ABC):
+class BaseLoeStepCallBack(ABC):
     """
     Just a callable that gets notified each time the model made a step
     """
@@ -18,7 +18,7 @@ class BaseGonStepCallBack(ABC):
                  ax=None):
         pass
 
-class ScatterVideoCreatorGON(BaseGonStepCallBack):
+class ScatterVideoCreatorLoE(BaseLoeStepCallBack):
 
     def __init__(self, plot_images_directly: bool=False):
 

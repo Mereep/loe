@@ -192,7 +192,7 @@ class CustomDSBase(BaseEstimator, ClassifierMixin):
         Parameters
         ----------
         :param X: Training AND DSEL data (if DSEL_perc is None or 1. thats the same)
-        :param X_expert: If provided that data is handed of to the experts instead of the GON data. May be used if your expert can handle specific data that GON cannot (e.g. Categorical, Missing Vals etc.)
+        :param X_expert: If provided that data is handed of to the experts instead of the LoE data. May be used if your expert can handle specific data that LoE cannot (e.g. Categorical, Missing Vals etc.)
         :param y: Class labels
 
         :raises ValueError: if classifiers are not supported
@@ -307,7 +307,7 @@ class CustomDSBase(BaseEstimator, ClassifierMixin):
            y : array of shape = [n_samples]
                class labels of each sample in X.
 
-           X_expert : If provided that data is handed over to experts instead of GON-transformed data
+           X_expert : If provided that data is handed over to experts instead of LoE-transformed data
            """
 
         self.val_data_ = X
@@ -336,7 +336,7 @@ class CustomDSBase(BaseEstimator, ClassifierMixin):
         y : array of shape = [n_samples]
             class labels of each sample in X.
 
-        X_expert : If provided that data is handed over to experts instead of GON-transformed data
+        X_expert : If provided that data is handed over to experts instead of LoE-transformed data
         """
 
         self.n_classes_ = self.classes_.shape[0]
@@ -452,7 +452,6 @@ class CustomDSBase(BaseEstimator, ClassifierMixin):
         logging.getLogger(self.__class__.__name__).log(level, msg)
 
     def log_info(self, msg):
-        print(msg)
         self.log(level=logging.INFO, msg=msg)
 
     def log_warning(self, msg):
@@ -469,7 +468,7 @@ class CustomDCSBase(CustomDSBase):
     pass
 
 
-class GON(CustomDCSBase):
+class LoE(CustomDCSBase):
     def __init__(self,
                  pool_classifiers: Optional[Union[List[BaseEstimator], BaseEstimator]] = None,
                  step_size: float = 2.,
@@ -478,13 +477,13 @@ class GON(CustomDCSBase):
                  fixed_classifiers: Optional[List[int]] = None,
                  assign_random_points_if_model_outside: bool = True,
                  stochastic_attention: float = 1.,
-                 step_callback: Optional['BaseGonStepCallBack'] = None,
+                 step_callback: Optional['BaseLoEStepCallBack'] = None,
                  mode: str = 'global',
                  *args,
                  **kwargs,
                  ):
         """
-        The GoN model. For beginners the settings might mostly be let alone. However, there might be great potential
+        The LoE model. For beginners the settings might mostly be let alone. However, there might be great potential
         in tweaking parameters of the model (start with `iterations` and `step_size`)
 
         Parameters
@@ -1155,7 +1154,7 @@ class GON(CustomDCSBase):
 
     def get_train_data(self, processed=True) -> np.ndarray:
         """
-        Will return the training data (GON version)
+        Will return the training data (LoE version)
         :param processed:
         :return:
         """
@@ -1168,7 +1167,7 @@ class GON(CustomDCSBase):
 
     def get_val_data(self, processed=True) -> np.ndarray:
         """
-        Will return the val data (GON version)
+        Will return the val data (LoE version)
         :param processed:
         :return:
         """
@@ -1296,7 +1295,6 @@ class GON(CustomDCSBase):
 
         n_samples = len(self.get_DSEL())
         assignments = self.assign_data_points_to_model(self.get_DSEL(processed=True), is_processed=True)
-
         # fill array row-wise with importances per model
         for i in range(0, self.n_classifiers_):
 
@@ -1326,6 +1324,7 @@ class GON(CustomDCSBase):
         for model_idx, assignment in assignments.items():
             labels[assignment] = model_idx
 
+        # @TODO make these parameters or make the whole model an estimator
         et = ExtraTreesClassifier(n_estimators=1000,
                                   max_depth=6,                      # don't waste too much time
                                   random_state=self.random_state_)  # make this deterministic so that multiple calls
@@ -1334,6 +1333,7 @@ class GON(CustomDCSBase):
         et.fit(self.get_DSEL(), labels)
         importances_et = et.feature_importances_
 
+        # @TODO make the mixing a parameter
         return 0.5 * importances_nerds + 0.5 * importances_et
 
     @feature_importances_.setter

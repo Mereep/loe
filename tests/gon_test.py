@@ -20,7 +20,7 @@ from gon import GON
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.tree import DecisionTreeClassifier
 import numpy as np
-from gon import ScatterVideoCreatorGON
+from gon import ScatterVideoCreatorLoE
 import tempfile
 from os.path import join as pjoin
 import os
@@ -34,7 +34,7 @@ class GonTest(unittest.TestCase):
         or some other failure within the fallback movie writers)
         :return:
         """
-        scatter = ScatterVideoCreatorGON(plot_images_directly=False)
+        scatter = ScatterVideoCreatorLoE(plot_images_directly=False)
         # should perform at 1 accuracy (4 model)
         models = [DecisionTreeClassifier(max_depth=1) for i in range(8)]
         t = GON(pool_classifiers=models,

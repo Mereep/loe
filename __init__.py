@@ -15,11 +15,36 @@
 # @created: 02.04.2020
 """
 
-from gon.classes.gon import GON, CustomDCSBase, BaseEstimator
-from gon.utils.base_gon_step_callback import BaseGonStepCallBack, ScatterVideoCreatorGON
+from classes.loe import LoE, CustomDCSBase, BaseEstimator
+from utils.base_gon_step_callback import BaseLoeStepCallBack, ScatterVideoCreatorLoE
+import warnings
+
+
+class DeprecationBase:
+    def __new__(cls, *args, **kwargs):
+        warnings.warn(cls.__name__ + " is deprecated. Do not use it anymore", DeprecationWarning)
+        return super().__new__(cls)
+
+class GonDeprecated(LoE, DeprecationBase):
+    pass
+
+
+class ScatterVideoCreatorGONDeprecated(ScatterVideoCreatorLoE, DeprecationBase):
+    pass
+
+class BaseGonStepCallbackDeprecated(BaseLoeStepCallBack, DeprecationBase):
+    pass
+
+# only for backwards compatibility. You should not use those in new projects
+GON = GonDeprecated
+ScatterVideoCreatorGON = ScatterVideoCreatorGONDeprecated
+BaseGonStepCallBack = BaseGonStepCallbackDeprecated
 
 __all__ = ['GON',
+           'LoE',
            'CustomDCSBase',
            'BaseEstimator',
+           'BaseLoeStepCallBack',
            'BaseGonStepCallBack',
-           'ScatterVideoCreatorGON']
+           'ScatterVideoCreatorGON',
+           'ScatterVideoCreatorLoE']
