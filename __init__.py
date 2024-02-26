@@ -15,8 +15,8 @@
 # @created: 02.04.2020
 """
 
-from classes.loe import LoE, CustomDCSBase, BaseEstimator
-from utils.base_gon_step_callback import BaseLoeStepCallBack, ScatterVideoCreatorLoE
+from loe.classes.loe import LoE, CustomDCSBase, BaseEstimator
+from loe.utils.base_gon_step_callback import BaseLoeStepCallBack, ScatterVideoCreatorLoE
 import warnings
 
 
